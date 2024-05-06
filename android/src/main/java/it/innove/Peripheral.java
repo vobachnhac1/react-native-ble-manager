@@ -78,7 +78,9 @@ public class Peripheral extends BluetoothGattCallback {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Runnable discoverServicesRunnable;
     private boolean commandQueueBusy = false;
-
+    // 
+    private Thread eventMtu;
+    private Thread eventNotify;
     private List<byte[]> writeQueue = new ArrayList<>();
 
     public Peripheral(BluetoothDevice device, int advertisingRSSI, byte[] scanRecord, ReactContext reactContext) {

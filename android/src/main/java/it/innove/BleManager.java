@@ -431,7 +431,7 @@ class BleManager extends ReactContextBaseJavaModule {
             Log.d(LOG_TAG, "Message(" + decoded + "): " + new String(decoded));
             String dataStr =  new String(decoded);
             peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
-                    decoded, maxByteSize, queueSleepTime, callback, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+                dataStr, maxByteSize, queueSleepTime, callback, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
         } else
             callback.invoke("Peripheral not found");
     }
