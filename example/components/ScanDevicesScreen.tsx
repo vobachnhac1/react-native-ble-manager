@@ -30,7 +30,7 @@ import BleManager, {
 } from 'react-native-ble-manager';
 
 const SECONDS_TO_SCAN_FOR = 3;
-const SERVICE_UUIDS: string[] = [];
+const SERVICE_UUIDS: string[] = ['fff0'];
 const ALLOW_DUPLICATES = true;
 
 const BleManagerModule = NativeModules.BleManager;
@@ -40,7 +40,7 @@ declare module 'react-native-ble-manager' {
   // enrich local contract with custom state properties needed by App.tsx
   interface Peripheral {
     connected?: boolean;
-    connecting?: boolean;     
+    connecting?: boolean;
   }
 }
 
@@ -58,7 +58,6 @@ const ScanDevicesScreen = () => {
     if (!isScanning) {
       // reset found peripherals before scan
       setPeripherals(new Map<Peripheral['id'], Peripheral>());
-
       try {
         console.debug('[startScan] starting scan...');
         setIsScanning(true);
@@ -79,20 +78,47 @@ const ScanDevicesScreen = () => {
     }
   };
 
+  const [blueInfo, setBlueInfo] = useState({
+    serviceUUID: 'fff0',
+    writeUUID: 'fff2',
+    readUUID: 'fff1',
+    serialnumber: null,
+    deviceName: null,
+    deviceId: null,
+    peripheralId: null,
+  });
+
+  // Bước 1: mở kết nối chọn bluetooth
   const startCompanionScan = () => {
     setPeripherals(new Map<Peripheral['id'], Peripheral>());
     try {
       console.debug('[startCompanionScan] starting companion scan...');
       BleManager.companionScan(SERVICE_UUIDS, {single: false})
-        .then((peripheral: Peripheral | null) => {
+        .then(async (peripheral: Peripheral | null) => {
           console.debug(
             '[startCompanionScan] scan promise returned successfully.',
             peripheral,
           );
+          // có chọn kết nối thì lưu lại => tiến hành connected
           if (peripheral != null) {
-            setPeripherals(map => {
-              return new Map(map.set(peripheral.id, peripheral));
+            setBlueInfo({
+              ...blueInfo,
+              serialnumber: peripheral.id,
+              deviceName: peripheral.name,
+              deviceId: peripheral.id,
             });
+            await BleManager.disconnect(peripheral.id);
+            BleManager.connect(peripheral.id)
+              .then((data: any) => {
+                console.log('connect data: ', data);
+              })
+              .catch((error: any) => {
+                console.log('connect error: ', error);
+              });
+
+            // setPeripherals(map => {
+            //   return new Map(map.set(peripheral.id, peripheral));
+            // });
           }
         })
         .catch((err: any) => {
@@ -103,6 +129,7 @@ const ScanDevicesScreen = () => {
     }
   };
 
+  // Bước 0: mở bluetooth
   const enableBluetooth = async () => {
     try {
       console.debug('[enableBluetooth]');
@@ -110,6 +137,26 @@ const ScanDevicesScreen = () => {
     } catch (error) {
       console.error('[enableBluetooth] thrown', error);
     }
+  };
+
+  // bước 2: truyền thông tin xuống
+  const sendToDevice = async () => {
+    console.log('sendToDevice: ', blueInfo);
+    await BleManager.connect(blueInfo.deviceId);
+    if (!blueInfo.serviceUUID || !blueInfo.deviceId) return;
+    // gọi lấy thông tin dữ liệu
+    const buffer = Buffer.from(
+      new Uint8Array(toArrayBuffer(Buffer.from(Buffer.from('#100;')))),
+    );
+
+    const regularArr = Array.from(buffer);
+    const writeWithoutResponse = await BleManager.writeWithoutResponse(
+      blueInfo.deviceId,
+      blueInfo.serviceUUID,
+      blueInfo.writeUUID,
+      regularArr,
+    );
+    console.log('writeWithoutResponse: ', writeWithoutResponse);
   };
 
   const handleStopScan = () => {
@@ -142,10 +189,6 @@ const ScanDevicesScreen = () => {
   ) => {
     const array = JSON.parse('[' + data.value + ']');
     console.log('array: ', new Buffer(array).toString());
-
-    // console.debug(
-    //   `[handleUpdateValueForCharacteristic] received data from '${data.peripheral}' with characteristic='${data.characteristic}' and value='${new Buffer(array).toString()}'`,
-    // );
   };
 
   const handleDiscoverPeripheral = (peripheral: Peripheral) => {
@@ -162,7 +205,6 @@ const ScanDevicesScreen = () => {
     if (peripheral && peripheral.connected) {
       try {
         await BleManager.disconnect(peripheral.id);
-        // writeData(peripheral);
       } catch (error) {
         console.error(
           `[togglePeripheralConnection][${peripheral.id}] error when trying to disconnect device.`,
@@ -207,12 +249,36 @@ const ScanDevicesScreen = () => {
 
   const getAssociatedPeripherals = async () => {
     try {
-      const associatedPeripherals = await BleManager.getAssociatedPeripherals();
-      console.debug(
-        '[getAssociatedPeripherals] associatedPeripherals',
-        associatedPeripherals,
-      );
+      // const associatedPeripherals = await BleManager.getAssociatedPeripherals();
+      const associatedPeripherals = await BleManager.getConnectedPeripherals();
+      if (associatedPeripherals.length === 0) {
+        console.warn('[retrieveConnected] No connected peripherals found.');
+        startCompanionScan();
+        return;
+      }
 
+      if (associatedPeripherals.length > 0) {
+        console.log('associatedPeripherals[0]: ', associatedPeripherals[0]);
+        setBlueInfo({
+          ...blueInfo,
+          serialnumber: associatedPeripherals[0].id,
+          deviceName: associatedPeripherals[0].name,
+          deviceId: associatedPeripherals[0].id,
+        });
+        // gọi lấy thông tin dữ liệu
+        const buffer = Buffer.from(
+          new Uint8Array(toArrayBuffer(Buffer.from(Buffer.from('#100;')))),
+        );
+        const regularArr = Array.from(buffer);
+        const writeWithoutResponse = await BleManager.writeWithoutResponse(
+          blueInfo.deviceId,
+          blueInfo.serviceUUID,
+          blueInfo.writeUUID,
+          regularArr,
+        );
+
+        console.log('writeWithoutResponse: ', writeWithoutResponse);
+      }
       for (const peripheral of associatedPeripherals) {
         setPeripherals(map => {
           return new Map(map.set(peripheral.id, peripheral));
@@ -226,39 +292,18 @@ const ScanDevicesScreen = () => {
     }
   };
 
-  const [deviceId, setDeviceId] = useState('');
-  const [peripheralData, setperipheral] = useState<any>();
-  useEffect(() => {
-    if (deviceId) {
-      const serviceUUID: string = 'fff0';
-      const writeUUID = 'fff2';
-      const readUUID = 'fff1';
-      // const readUUID = '2902'; 
-
-      // const deviceId = peripheral.id;
-      // BleManager.read(deviceId, serviceUUID, readUUID)
-      //   .then(data => {
-      //     console.log('data deviceId: ', data);
-      //   })
-      //   .catch(error => {
-      //     console.log('error deviceId: ', error);
-      //   });
-
-      // BleManager.startNotification(deviceId, serviceUUID, readUUID)
-      //   .then(data => {
-      //     console.log('data deviceId: ', data);
-      //   })
-      //   .catch(error => {
-      //     console.log('error deviceId: ', error);
-      //   });
-      // console.log('startNotification: ');
+  function toArrayBuffer(buffer: Buffer) {
+    const arrayBuffer = new ArrayBuffer(buffer.length);
+    const view = new Uint8Array(arrayBuffer);
+    for (let i = 0; i < buffer.length; ++i) {
+      view[i] = buffer[i];
     }
-  }, [deviceId]);
+    return arrayBuffer;
+  }
 
   const connectPeripheral = async (peripheral: Peripheral) => {
     try {
       if (peripheral) {
-        setperipheral(peripheral);
         setPeripherals(map => {
           const p = map.get(peripheral.id);
           if (p) {
@@ -280,103 +325,73 @@ const ScanDevicesScreen = () => {
           }
           return map;
         });
-        // đăng ký notify
-        const notify = await BleManager. 
 
         // before retrieving services, it is often a good idea to let bonding & connection finish properly
-        // await sleep(100);
+        await sleep(900);
 
         /* Test read current RSSI value, retrieve services first */
-        // const peripheralData = await BleManager.retrieveServices(peripheral.id);
-        // console.debug(
-        //   `[connectPeripheral][${peripheral.id}] retrieved peripheral services`,
-        //   peripheralData,
-        // );
+        const peripheralData = await BleManager.retrieveServices(peripheral.id);
+        console.debug(
+          `[connectPeripheral][${peripheral.id}] retrieved peripheral services`,
+          peripheralData,
+        );
 
-        // setPeripherals(map => {
-        //   const p = map.get(peripheral.id);
-        //   if (p) {
-        //     return new Map(map.set(p.id, p));
-        //   }
-        //   return map;
-        // });
+        setPeripherals(map => {
+          const p = map.get(peripheral.id);
+          if (p) {
+            return new Map(map.set(p.id, p));
+          }
+          return map;
+        });
 
-        // const rssi = await BleManager.readRSSI(peripheral.id);
-        // console.debug(
-        //   `[connectPeripheral][${peripheral.id}] retrieved current RSSI value: ${rssi}.`,
-        // );
+        const rssi = await BleManager.readRSSI(peripheral.id);
+        console.debug(
+          `[connectPeripheral][${peripheral.id}] retrieved current RSSI value: ${rssi}.`,
+        );
 
-        // if (peripheralData.characteristics) {
-        //   for (const characteristic of peripheralData.characteristics) {
-        //     if (characteristic.descriptors) {
-        //       for (const descriptor of characteristic.descriptors) {
-        //         try {
-        //           const data = await BleManager.readDescriptor(
-        //             peripheral.id,
-        //             characteristic.service,
-        //             characteristic.characteristic,
-        //             descriptor.uuid,
-        //           );
-        //           console.debug(
-        //             `[connectPeripheral][${peripheral.id}] ${characteristic.service} ${characteristic.characteristic} ${descriptor.uuid} descriptor read as:`,
-        //             data,
-        //           );
-        //         } catch (error) {
-        //           console.error(
-        //             `[connectPeripheral][${peripheral.id}] failed to retrieve descriptor ${descriptor} for characteristic ${characteristic}:`,
-        //             error,
-        //           );
-        //         }
-        //       }
-        //     }
-        //   }
-        // }
+        if (peripheralData.characteristics) {
+          for (const characteristic of peripheralData.characteristics) {
+            const serviceUUID = characteristic.service;
+            const charUUID = characteristic.characteristic;
+            console.log('serviceUUID: ', serviceUUID);
+            console.log('charUUID: ', charUUID);
+            console.log('characteristic: ', characteristic);
+            // const blue = await BleManager.writeWithoutResponse()
+            // if (characteristic.descriptors) {
+            //   for (let descriptor of characteristic.descriptors) {
+            //     try {
+            //       let data = await BleManager.readDescriptor(
+            //         peripheral.id,
+            //         characteristic.service,
+            //         characteristic.characteristic,
+            //         descriptor.uuid,
+            //       );
+            //       console.debug(
+            //         `[connectPeripheral][${peripheral.id}] ${characteristic.service} ${characteristic.characteristic} ${descriptor.uuid} descriptor read as:`,
+            //         data,
+            //       );
+            //     } catch (error) {
+            //       console.error(
+            //         `[connectPeripheral][${peripheral.id}] failed to retrieve descriptor ${descriptor} for characteristic ${characteristic}:`,
+            //         error,
+            //       );
+            //     }
+            //   }
+            // }
+          }
+        }
 
-        // setPeripherals(map => {
-        //   const p = map.get(peripheral.id);
-        //   if (p) {
-        //     p.rssi = rssi;
-        //     return new Map(map.set(p.id, p));
-        //   }
-        //   return map;
-        // });
-
-        // gưi tính hiệu bluetooth
-        // deviceId
-        // const transactionId = 'idMonitor';
-        // const serviceUUID: string = '0000fff0-0000-1000-8000-00805f9b34fb';
-        // const writeUUID = '0000fff2-0000-1000-8000-00805f9b34fb';
-        // const readUUID = '0000fff1-0000-1000-8000-00805f9b34fb';
-
-        const serviceUUID: string = 'fff0';
-        const writeUUID = 'fff2';
-        const readUUID = 'fff1';
-
-        const deviceId = peripheral.id;
-        // setDeviceId(deviceId);
-
-        // const uuid = await BleManager.getDiscoveredPeripherals();
-        // let uuidDecript = '';
-        // if (
-        //   peripheralData?.characteristics &&
-        //   peripheralData?.characteristics?.length > 0
-        // ) {
-        //   peripheralData?.characteristics?.forEach(item => {
-        //     if (item?.properties?.Notify) {
-        //       console.log('------- Notify: ', item?.characteristic);
-        //       console.log('------- descriptors: ', item?.descriptors);
-        //       item?.descriptors?.forEach(item1 => {
-        //         console.log('-------item1: ', item1.uuid);
-        //         uuidDecript = item1?.uuid;
-        //       });
-        //     } else if (item?.properties?.Write) {
-        //       console.log('------- Write: ', item?.characteristic);
-        //     }
-        //   });
-        // }
+        setPeripherals(map => {
+          const p = map.get(peripheral.id);
+          if (p) {
+            p.rssi = rssi;
+            return new Map(map.set(p.id, p));
+          }
+          return map;
+        });
 
         // navigation.navigate('PeripheralDetails', {
-        //   peripheralData,
+        //   peripheralData: peripheralData,
         // });
       }
     } catch (error) {
@@ -386,58 +401,7 @@ const ScanDevicesScreen = () => {
       );
     }
   };
-  const writeData = (peripheral: any) => {
-    const serviceUUID: string = 'fff0';
-    const writeUUID = 'fff2';
-    const readUUID = 'fff1';
 
-    const deviceId = peripheral?.id;
-    console.log(
-      'Uint8Array ',
-      Buffer.from(
-        new Uint8Array(toArrayBuffer(Buffer.from(Buffer.from('#100;')))),
-      ),
-    );
-    const buffer = Buffer.from(
-      new Uint8Array(toArrayBuffer(Buffer.from(Buffer.from('#100;')))),
-    );
-
-    const regularArr = Array.from(buffer);
-    console.log('regularArr: ', regularArr);
-
-    setTimeout(async () => {
-      // await BleManager.disconnect(peripheral.id);
-      // await connectPeripheral(peripheral);
-      const writeWithoutResponse = await BleManager.writeWithoutResponse(
-        deviceId,
-        serviceUUID,
-        writeUUID,
-        regularArr,
-      );
-
-      console.log('writeWithoutResponse: ', writeWithoutResponse);
-    }, 100);
-
-    console.log('\n\n>>>>>>>> deviceId: ', deviceId);
-    console.log('\n\n>>>>>>>> end <<<<<<<<<');
-  };
-
-  function toArrayBuffer(buffer: Buffer) {
-    const arrayBuffer = new ArrayBuffer(buffer.length);
-    const view = new Uint8Array(arrayBuffer);
-    for (let i = 0; i < buffer.length; ++i) {
-      view[i] = buffer[i];
-    }
-    return arrayBuffer;
-  }
-  function toUint16ArrayBuffer(buffer: Buffer) {
-    const arrayBuffer = new ArrayBuffer(buffer.length);
-    const view = new Uint16Array(arrayBuffer);
-    for (let i = 0; i < buffer.length; ++i) {
-      view[i] = buffer[i];
-    }
-    return arrayBuffer;
-  }
   function sleep(ms: number) {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
@@ -475,7 +439,6 @@ const ScanDevicesScreen = () => {
     ];
 
     handleAndroidPermissions();
-
     return () => {
       console.debug('[app] main component unmounting. Removing listeners...');
       for (const listener of listeners) {
@@ -551,43 +514,32 @@ const ScanDevicesScreen = () => {
     <>
       <StatusBar />
       <SafeAreaView style={styles.body}>
-        <View style={styles.buttonGroup}>
-          <Pressable style={styles.scanButton} onPress={startScan}>
-            <Text style={styles.scanButtonText}>
-              {isScanning ? 'Scanning...' : 'Scan Bluetooth'}
-            </Text>
-          </Pressable>
-
-          <Pressable style={styles.scanButton} onPress={retrieveConnected}>
-            <Text style={styles.scanButtonText} lineBreakMode="middle">
-              Retrieve connected peripherals
-            </Text>
-          </Pressable>
-          <Pressable
-            style={styles.scanButton}
-            onPress={() => writeData(peripheralData)}>
-            <Text style={styles.scanButtonText} lineBreakMode="middle">
-              "writeData"
-            </Text>
-          </Pressable>
-        </View>
-
         {Platform.OS === 'android' && (
           <>
             <View style={styles.buttonGroup}>
-              <Pressable style={styles.scanButton} onPress={startCompanionScan}>
+              {/* <Pressable style={styles.scanButton} onPress={startCompanionScan}>
                 <Text style={styles.scanButtonText}>Scan Companion</Text>
-              </Pressable>
+              </Pressable> */}
 
               <Pressable
                 style={styles.scanButton}
                 onPress={getAssociatedPeripherals}>
+                <Text style={styles.scanButtonText}>Connect to Devices</Text>
+              </Pressable>
+            </View>
+            <View style={styles.buttonGroup}>
+              {/* <Pressable style={styles.scanButton} onPress={startScan}>
                 <Text style={styles.scanButtonText}>
-                  Get Associated Peripherals
+                  {isScanning ? 'Scanning...' : 'Scan Bluetooth'}
+                </Text>
+              </Pressable> */}
+
+              <Pressable style={styles.scanButton} onPress={sendToDevice}>
+                <Text style={styles.scanButtonText} lineBreakMode="middle">
+                  Send Info
                 </Text>
               </Pressable>
             </View>
-
             <View style={styles.buttonGroup}>
               <Pressable style={styles.scanButton} onPress={enableBluetooth}>
                 <Text style={styles.scanButtonText}>Enable Bluetooh</Text>
@@ -615,17 +567,6 @@ const ScanDevicesScreen = () => {
   );
 };
 
-const boxShadow = {
-  shadowColor: '#000',
-  shadowOffset: {
-    width: 0,
-    height: 2,
-  },
-  shadowOpacity: 0.25,
-  shadowRadius: 3.84,
-  elevation: 5,
-};
-
 const styles = StyleSheet.create({
   engine: {
     position: 'absolute',
@@ -646,7 +587,7 @@ const styles = StyleSheet.create({
     margin: 10,
     borderRadius: 12,
     flex: 1,
-    ...boxShadow,
+    // ...boxShadow,
   },
   scanButtonText: {
     fontSize: 16,
@@ -703,7 +644,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     marginRight: 10,
     borderRadius: 20,
-    ...boxShadow,
+    // ...boxShadow,
   },
   noPeripherals: {
     margin: 10,

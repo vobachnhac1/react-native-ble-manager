@@ -78,9 +78,7 @@ public class Peripheral extends BluetoothGattCallback {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Runnable discoverServicesRunnable;
     private boolean commandQueueBusy = false;
-    // 
-    private Thread eventMtu;
-    private Thread eventNotify;
+
     private List<byte[]> writeQueue = new ArrayList<>();
 
     public Peripheral(BluetoothDevice device, int advertisingRSSI, byte[] scanRecord, ReactContext reactContext) {
@@ -1223,7 +1221,6 @@ public class Peripheral extends BluetoothGattCallback {
 
         //     completedCommand();
         // });
-
         Log.d("NHACVB",  "data UUID----------: " + data  );     
         try {
             final String ecCharacteristicWriteUUID = "0000fff2-0000-1000-8000-00805f9b34fb";
@@ -1289,6 +1286,7 @@ public class Peripheral extends BluetoothGattCallback {
             Log.d(BleManager.LOG_TAG,
                     "onConnectionStateChange connected but gatt of Run method was null");
         }
+    
     }
 
     public void requestConnectionPriority(int connectionPriority, Callback callback) {

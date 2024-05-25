@@ -167,7 +167,7 @@ class BleManager extends ReactContextBaseJavaModule {
         filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
         IntentFilter intentFilter = new IntentFilter(BluetoothDevice.ACTION_PAIRING_REQUEST);
         intentFilter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
-        if (Build.VERSION.SDK_INT >= UPSIDE_DOWN_CAKE){
+        if (Build.VERSION.SDK_INT >= 34){
             // Google in 2023 decides that flag RECEIVER_NOT_EXPORTED or RECEIVER_EXPORTED should be explicit set SDK 34(UPSIDE_DOWN_CAKE) on registering receivers.
             // Also the export flags are available on Android 8 and higher, should be used with caution so that don't break compability with that devices.
             context.registerReceiver(mReceiver, filter, Context.RECEIVER_EXPORTED);
@@ -428,7 +428,6 @@ class BleManager extends ReactContextBaseJavaModule {
               decoded[i] = Integer.valueOf(message.getInt(i)).byteValue();
             }
             Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
-            Log.d(LOG_TAG, "Message(" + decoded + "): " + new String(decoded));
             String dataStr =  new String(decoded);
             peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
                 dataStr, maxByteSize, queueSleepTime, callback, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
@@ -568,11 +567,17 @@ class BleManager extends ReactContextBaseJavaModule {
                     break;
                 case BluetoothAdapter.STATE_TURNING_OFF:
                     state = "turning_off";
+                    if (scanManager != null) {
+                        scanManager.setScanning(false);
+                    }
                     break;
                 case BluetoothAdapter.STATE_OFF:
                 default:
                     // should not happen as per https://developer.android.com/reference/android/bluetooth/BluetoothAdapter#getState()
                     state = "off";
+                    if (scanManager != null) {
+                        scanManager.setScanning(false);
+                    }
                     break;
             }
         }
@@ -918,7 +923,7 @@ class BleManager extends ReactContextBaseJavaModule {
             disconnectPeripherals();
         } catch (Exception e) {
             Log.d(LOG_TAG, "Could not disconnect peripherals", e);
-        }
+        }onServicesDiscovered
 
         if (scanManager != null) {
             // Stop scan in case one was started to stop events from being emitted after destroy
