@@ -4,7 +4,7 @@
 
 import {useNavigation} from '@react-navigation/native';
 import {Buffer} from 'buffer';
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -183,13 +183,50 @@ const ScanDevicesScreen = () => {
   const handleConnectPeripheral = (event: any) => {
     console.log(`[handleConnectPeripheral][${event.peripheral}] connected.`);
   };
-
+  const lisRef = useRef<any>([]);
   const handleUpdateValueForCharacteristic = (
     data: BleManagerDidUpdateValueForCharacteristicEvent,
   ) => {
     const array = JSON.parse('[' + data.value + ']');
-    console.log('array: ', new Buffer(array).toString());
+    const string = new Buffer(array).toString();
+    console.log('------ handleUpdateValueForCharacteristic: ', string);
+    const exist = string
+      .split(' ')
+      .filter((item: any) => item.trim().length > 0);
+
+    // tính hiệu bắt đầu
+    if (exist.includes('print') || exist.includes('date')) {
+      lisRef.current = [];
+      return;
+    }
+
+    //  tính hiệu kết thúc
+    if (exist.includes('-----end-----') || exist.includes('-&')) {
+      return;
+    }
+    // sách dữ liệu
+    lisRef.current.push(formatStringToObject(string));
   };
+  // FORMAT data
+  function formatStringToObject(text: any) {
+    const exist = text.split(' ').filter((item: any) => item.trim().length > 0);
+    if (
+      exist.includes('print') ||
+      exist.includes('date') ||
+      exist.includes('-----end-----') ||
+      exist.includes('-&')
+    ) {
+      return null;
+    }
+    const longlat = exist[3].trim().split(',');
+    return {
+      stt: exist[0],
+      date: exist[1],
+      time: exist[2],
+      lat: longlat[0],
+      long: longlat[1],
+    };
+  }
 
   const handleDiscoverPeripheral = (peripheral: Peripheral) => {
     console.debug('[handleDiscoverPeripheral] new BLE peripheral=', peripheral);
