@@ -923,7 +923,7 @@ class BleManager extends ReactContextBaseJavaModule {
             disconnectPeripherals();
         } catch (Exception e) {
             Log.d(LOG_TAG, "Could not disconnect peripherals", e);
-        }onServicesDiscovered
+        }
 
         if (scanManager != null) {
             // Stop scan in case one was started to stop events from being emitted after destroy
